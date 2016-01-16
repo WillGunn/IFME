@@ -11,12 +11,10 @@ namespace ifme
     public partial class frmAbout : Form
 	{
 		HashSet<string> Pro = new HashSet<string>(new string[] { "Anime4000", "Nemu", "Pis", "SailorOnDaTea", "Bvzcoder" });
-		HashSet<string> Art = new HashSet<string>(new string[] { "53C aka Ray-en", "http://53c.deviantart.com/" });
+		HashSet<string> Art = new HashSet<string>(new string[] { "53C", "http://53c.deviantart.com/", "Adeq", "https://www.facebook.com/liyana.0426" });
 		HashSet<string> Dev = new HashSet<string>();
 		HashSet<string> Lng = new HashSet<string>();
 		HashSet<string> Sup = new HashSet<string>(File.ReadAllLines("metauser.if"));
-
-		SoundPlayer epic = new SoundPlayer(Path.Combine("sounds", "epic.wav"));
 
 		public frmAbout()
 		{
@@ -29,7 +27,7 @@ namespace ifme
 		private void frmAbout_Load(object sender, EventArgs e)
 		{
 			foreach (var item in Plugin.List)
-				Dev.Add(item.Profile.Dev);
+				Dev.Add(item.Value.Profile.Dev);
 
 			foreach (var item in Language.Lists)
 			{
@@ -78,13 +76,10 @@ namespace ifme
 		private void frmAbout_Shown(object sender, EventArgs e)
 		{
 			bgThank.RunWorkerAsync();
-			epic.Play();
 		}
 
 		private void frmAbout_FormClosing(object sender, FormClosingEventArgs e)
 		{
-			epic.Stop();
-			epic.Dispose();
 			bgThank.Dispose();
 		}
 
@@ -111,7 +106,6 @@ namespace ifme
 		private void bgThank_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
 		{
 			bgThank.RunWorkerAsync();
-			epic.Stop();
 		}
 	}
 }

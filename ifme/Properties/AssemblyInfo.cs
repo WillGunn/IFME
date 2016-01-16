@@ -9,7 +9,7 @@ using System.Resources;
 [assembly: AssemblyTitle("Internet Friendly Media Encoder")]
 [assembly: AssemblyDescription("HEVC/H265 Multimedia Encoder")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("Hitoha Project")]
+[assembly: AssemblyCompany("Anime4000")]
 [assembly: AssemblyProduct("Internet Friendly Media Encoder")]
 [assembly: AssemblyCopyright("Anime4000, GNU GPL v2")]
 [assembly: AssemblyTrademark("IFME")]
@@ -33,6 +33,6 @@ using System.Resources;
 // You can specify all the values or you can default the Build and Revision Numbers 
 // by using the '*' as shown below:
 // [assembly: AssemblyVersion("1.0.*")]
-[assembly: AssemblyVersion("5.1.*")]
-[assembly: AssemblyFileVersion("5.1.4")]
+[assembly: AssemblyVersion("6.0")]
+[assembly: AssemblyFileVersion("6.0")]
 [assembly: NeutralResourcesLanguageAttribute("en")]

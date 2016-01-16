@@ -60,18 +60,18 @@ namespace ifme
 		public static string HEVC10 { get { return Path.Combine(Global.Folder.Plugins, $"x265{Properties.Settings.Default.Compiler}", "x265-10"); } }
 		public static string HEVC12 { get { return Path.Combine(Global.Folder.Plugins, $"x265{Properties.Settings.Default.Compiler}", "x265-12"); } }
 
-		// Run once, can be modified
-		public static string LIBAV = Path.Combine(Global.Folder.Plugins, "ffmpeg", "ffmpeg");
-		public static string PROBE = Path.Combine(Global.Folder.Plugins, "ffmpeg", "ffprobe");
-		public static string FPLAY = Path.Combine(Global.Folder.Plugins, "ffmpeg", "ffplay");
-		public static string MKVEX = Path.Combine(Global.Folder.Plugins, "mkvtoolnix", "mkvextract");
-		public static string MKVME = Path.Combine(Global.Folder.Plugins, "mkvtoolnix", "mkvmerge");
-		public static string MP4BX = Path.Combine(Global.Folder.Plugins, "mp4box", "mp4box");
-		public static string AVS4P = Path.Combine(Global.Folder.Plugins, "avisynth", "avs2pipe");
-		public static string FFMS2 = Path.Combine(Global.Folder.Plugins, "ffmsindex", "ffmsindex");
-		public static string MP4FP = Path.Combine(Global.Folder.Plugins, "mp4fpsmod", "mp4fpsmod");
+		// Run once
+		public static string FFMPEG { get { return Path.Combine(Global.Folder.Plugins, "ffmpeg", "ffmpeg"); } }
+		public static string FFPROBE { get { return Path.Combine(Global.Folder.Plugins, "ffmpeg", "ffprobe"); } }
+		public static string FFPLAY { get { return Path.Combine(Global.Folder.Plugins, "ffmpeg", "ffplay"); } }
+		public static string MKVEXT { get { return Path.Combine(Global.Folder.Plugins, "mkvtoolnix", "mkvextract"); } }
+		public static string MKVMER { get { return Path.Combine(Global.Folder.Plugins, "mkvtoolnix", "mkvmerge"); } }
+		public static string MP4BOX { get { return Path.Combine(Global.Folder.Plugins, "mp4box", "MP4Box"); } }
+		public static string AVSPIPE { get { return Path.Combine(Global.Folder.Plugins, "avisynth", "avs2pipe"); } }
+		public static string FFMS2 { get { return Path.Combine(Global.Folder.Plugins, "ffmsindex", "ffmsindex"); } }
+		public static string MP4FPS { get { return Path.Combine(Global.Folder.Plugins, "mp4fpsmod", "mp4fpsmod"); } }
 
-		public static string AviSynthFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.SystemX86), "avisynth.dll");
+		public static string AviSynthFile { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.SystemX86), "avisynth.dll"); } }
 		public static bool IsExistAviSynth = File.Exists(AviSynthFile);
 		public static bool IsForceAviSynth = false;
 
@@ -79,16 +79,7 @@ namespace ifme
 		public static bool IsExistHEVCICC = false;
 		public static bool IsExistHEVCMSVC = false;
 
-		public static List<Plugin> List = new List<Plugin>();
-
-		public static bool IsExist(string name)
-		{
-			foreach (var item in List)
-				if (string.Equals(item.Profile.Name, name, StringComparison.OrdinalIgnoreCase))
-					return true;
-
-			return false;
-		}
+		public static Dictionary<Guid, Plugin> List = new Dictionary<Guid, Plugin>();
 
 		public static void Repo()
 		{
@@ -98,15 +89,15 @@ namespace ifme
 
 			if (OS.IsWindows)
 				if (OS.Is64bit)
-					repo = Path.Combine(Global.Folder.App, "addons_windows64.repo");
+					repo = "addons_windows64.repo";
 				else
-					repo = Path.Combine(Global.Folder.App, "addons_windows32.repo");
+					repo = "addons_windows32.repo";
 
 			if (OS.IsLinux)
 				if (OS.Is64bit)
-					repo = Path.Combine(Global.Folder.App, "addons_linux64.repo");
+					repo = "addons_linux64.repo";
 				else
-					repo = Path.Combine(Global.Folder.App, "addons_linux32.repo");
+					repo = "addons_linux32.repo";
 
 			counted = File.ReadAllLines(repo).Length;
 
@@ -129,20 +120,21 @@ namespace ifme
 		{
 			foreach (var item in List)
 			{
-				Console.Write($"\nChecking for update: {item.Profile.Name}");
+				var obj = item.Value;
+				Console.Write($"\nChecking for update: {obj.Profile.Name}");
 
-				if (string.IsNullOrEmpty(item.Provider.Update))
+				if (string.IsNullOrEmpty(obj.Provider.Update))
 					continue;
 
-				var version = new Download().GetString(item.Provider.Update);
+				var version = new Download().GetString(obj.Provider.Update);
 
 				if (string.IsNullOrEmpty(version))
 					continue;
 
-				if (string.Equals(item.Profile.Ver, version))
+				if (string.Equals(obj.Profile.Ver, version))
 					continue;
 
-				new Download().GetFileExtract(item.Provider.Download, Global.Folder.Plugins);
+				new Download().GetFileExtract(obj.Provider.Download, Global.Folder.Plugins);
 			}
 		}
 
@@ -187,7 +179,7 @@ namespace ifme
 					p.Arg.Advance = data["arg"]["advance"];
 				}
 
-				List.Add(p);
+				List.Add(new Guid(data["info"]["guid"]), p);
 			}
 		}
 
@@ -202,18 +194,18 @@ namespace ifme
 			a.Profile.Ver = Global.App.Version;
 			a.Profile.Web = "https://x265.github.io/";
 			a.Provider.Name = "IFME";
-			a.Provider.Update = null;
-			a.Provider.Download = null;
-			a.App.Bin = null;
+			a.Provider.Update = string.Empty;
+			a.Provider.Download = string.Empty;
+			a.App.Bin = string.Empty;
 			a.App.Quality = new[] { "0" };
 			a.App.Default = "0";
-			a.Arg.Raw = null;
-			a.Arg.Input = null;
-			a.Arg.Output = null;
-			a.Arg.Bitrate = null;
-			a.Arg.Advance = null;
+			a.Arg.Raw = string.Empty;
+			a.Arg.Input = string.Empty;
+			a.Arg.Output = string.Empty;
+			a.Arg.Bitrate = string.Empty;
+			a.Arg.Advance = string.Empty;
 
-			List.Add(a);
+			List.Add(new Guid("00000000-0000-0000-0000-000000000000"), a);
 
 			var b = new Plugin();
 			b.Info.Type = "audio";
@@ -223,18 +215,18 @@ namespace ifme
 			b.Profile.Ver = Global.App.Version;
 			b.Profile.Web = "https://x265.github.io/";
 			b.Provider.Name = "IFME";
-			b.Provider.Update = null;
-			b.Provider.Download = null;
-			b.App.Bin = null;
+			b.Provider.Update = string.Empty;
+			b.Provider.Download = string.Empty;
+			b.App.Bin = string.Empty;
 			b.App.Quality = new[] { "128", "192", "256", "384", "512", "768", "1024" };
 			b.App.Default = "256";
-			b.Arg.Raw = null;
-			b.Arg.Input = null;
-			b.Arg.Output = null;
-			b.Arg.Bitrate = null;
-			b.Arg.Advance = null;
+			b.Arg.Raw = string.Empty;
+			b.Arg.Input = string.Empty;
+			b.Arg.Output = string.Empty;
+			b.Arg.Bitrate = string.Empty;
+			b.Arg.Advance = string.Empty;
 
-			List.Add(b);
-		}
+			List.Add(new Guid("ffffffff-ffff-ffff-ffff-ffffffffffff"), b);
+        }
 	}
 }

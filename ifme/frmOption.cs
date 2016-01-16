@@ -38,6 +38,12 @@ namespace ifme
 			txtNamePrefix.Text = Default.NamePrefix;
 			chkSoundDone.Checked = Default.SoundFinish;
 
+			// FFmpeg 64bit
+			chkFFmpeg64.Enabled = OS.Is64bit;
+			chkFFmpeg64.Checked = Default.UseFFmpeg64;
+			grpFFmpeg.Text = "&FFmpeg";
+			chkFFmpeg64.Text = "FFmpeg &64bit *";
+
 			// Load CPU stuff
 			for (int i = 0; i < Environment.ProcessorCount; i++)
 			{
@@ -57,11 +63,11 @@ namespace ifme
 			{
 				if (string.Equals(CRC32.GetFile(Plugin.AviSynthFile), "0x073A3318"))
 				{
-					lblAviSynthStatus.Text += ", 2.6 MT (2015.02.20)";
+					lblAviSynthStatus.Text += ", 2.6 MT (32bit, 2015.02.20)";
 				}
 				else if (string.Equals(CRC32.GetFile(Plugin.AviSynthFile), "0x30E0D263"))
 				{
-					lblAviSynthStatus.Text += ", 2.6 ST (Original)";
+					lblAviSynthStatus.Text += ", 2.6 ST (32bit, Original)";
 				}
 				else
 				{
@@ -76,13 +82,13 @@ namespace ifme
 			foreach (var item in Plugin.List)
 			{
 				ListViewItem x = new ListViewItem(new[] {
-					$"{item.Profile.Name}{(OS.Is64bit ? $" {(item.Profile.Arch == 32 ? "*32" : "")}" : "")}",
-					item.Profile.Ver,
-					item.Profile.Dev,
-					item.Provider.Name
+					$"{item.Value.Profile.Name}{(OS.Is64bit ? $" {(item.Value.Profile.Arch == 32 ? "*32" : "")}" : "")}",
+					item.Value.Profile.Ver,
+					item.Value.Profile.Dev,
+					item.Value.Provider.Name
 				});
 
-				x.Tag = item.Profile.Web;
+				x.Tag = item.Value.Profile.Web;
 
 				lstPlugin.Items.Add(x);
 			}
@@ -308,6 +314,9 @@ namespace ifme
 
 			// Temp Folder (again)
 			Default.DirTemp = txtTempFolder.Text;
+
+			// FFmpeg 64bit
+			Default.UseFFmpeg64 = chkFFmpeg64.Checked;
 
 			// Save
 			Default.Save();

@@ -1,21 +1,37 @@
-﻿Version 5.2 (Archangel Descending)
+﻿Version 6.0 (Archangel Descending)
+----------------------------------
 
 [new] Allow user to save encoded file either same source folder or given path
+[new] Capable to encode audio files, but not fully supported
 [added] Language: Italian
 [added] Allow user to add FFmpeg arguments/command-line
 [added] Allow user to edit/rename Encoding Preset (Git #55)
 [added] Allow user to delete Encoding Preset (Git #55)
 [added] Allow user to delete queue by pressing DEL key (Git #55)
-[fixed] CPU Affinity & Priority has been fix!
-[fixed] Downloader & Updater engine improved!
+[added] Allow user to add more Audio track
+[added] Allow TTC (TrueType Font Collection) to be embedded
+[fixed] CPU Affinity & Priority has been fix! [Windows] (Git #61)
+[fixed] Download & Updater engine improved!
 [fixed] Temp folder will clear after finished encoding, open & close program
 [fixed] HEVC video passthrough not properly save
 [fixed] Linux plugin is now statically linked (portable), thanks to darealshinji
 [fixed] Invalid MKV language id (told by Nikolai Lyskov)
 [fixed] Prevent copy audio tracks cause MKV chapter begin copied
 [fixed] Queue item value on audio bit-rate, Freq, and Channel revert to default (Git #57)
-[fixed] Remove 4GB wav limit (Git #56)
+[fixed] Remove 4GB wav limit, using pipe + header (Git #56)
 [fixed] Missing translation strings
+[fixed] better detecting media files inside AviSynth script (Git #54)
+[fixed] WMA will force to AAC either MKV or MP4 (Git #51)
+[fixed] Invalid language id become "und" (Git #62)
+[fixed] In video tab, different mode cause set to default value.
+[fixed] Faster loading time by adding "-s" as argument (skip update)
+[fixed] AviSynth Trim command doesn't apply for audio (Git #65)
+[change] Media Encoder engine improved
+[change] Prefix [encoded] now changed to current date-time postfix (Git #68)
+[change] Music removed for About IFME, not suitable for professional environment
+[change] Updated ISO 639-2 language code
+[change] Using FFmpeg to extract font files
+[change] Using GUID rather then string equalities for Audio encoder (API change)
 
 Version 5.1 (FLUORITE DIARY)
 -----------

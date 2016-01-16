@@ -35,7 +35,7 @@ namespace ifme
 			}
 			catch (Exception)
 			{
-				str = null;
+				str = string.Empty;
 				LogError("Not connected to the internet?");
 			}
 
@@ -130,7 +130,7 @@ namespace ifme
 
 		private void Extract(string archivefile, string savefolder)
 		{
-			string unzip = Path.Combine(Global.Folder.App, "7za");
+			string unzip = Path.Combine(Global.Folder.Root, "7za");
 
 			Console.SetCursorPosition(curX, curY);
 			Console.Write($"Extracting...");

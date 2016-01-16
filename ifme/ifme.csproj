@@ -13,7 +13,7 @@
     <FileAlignment>512</FileAlignment>
   </PropertyGroup>
   <PropertyGroup>
-    <ApplicationIcon>Resources\ifme5.ico</ApplicationIcon>
+    <ApplicationIcon>Resources\ifme-zenui.ico</ApplicationIcon>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|AnyCPU'">
     <DebugSymbols>true</DebugSymbols>
@@ -34,6 +34,9 @@
     <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="FFmpegDotNet">
+      <HintPath>..\references\FFmpegDotNet.dll</HintPath>
+    </Reference>
     <Reference Include="INIFileParser">
       <HintPath>..\references\INIFileParser.dll</HintPath>
     </Reference>
@@ -112,6 +115,7 @@
       <DependentUpon>Settings.settings</DependentUpon>
     </Compile>
     <Compile Include="Queue.cs" />
+    <Compile Include="StartUp.cs" />
     <Compile Include="TaskManager.cs" />
   </ItemGroup>
   <ItemGroup>
@@ -168,6 +172,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="lang\en.ini">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="lang\es-ES.ini">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="lang\fr.ini">
@@ -228,7 +235,6 @@
   </ItemGroup>
   <ItemGroup />
   <ItemGroup>
-    <None Include="Resources\ifme5.ico" />
     <None Include="Resources\drive_network.ico" />
     <None Include="Resources\BannerA.png" />
     <None Include="Resources\BannerB.png" />
@@ -246,8 +252,6 @@
     <None Include="Resources\film_delete.png" />
     <None Include="Resources\folder_explore.png" />
     <None Include="Resources\information.png" />
-    <None Include="Resources\page_add.png" />
-    <None Include="Resources\page_delete.png" />
     <None Include="Resources\wrench.png" />
     <None Include="Resources\applications_internet.png" />
     <None Include="Resources\newstuff.png" />
@@ -268,9 +272,9 @@
     <None Include="Resources\pencil.png" />
     <None Include="Resources\SplashScreen5CB.jpg" />
     <None Include="Resources\SplashScreen5CA.jpg" />
-    <Content Include="sounds\epic.wav">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
+    <None Include="Resources\ifme-zenui.ico" />
+    <None Include="Resources\delete.png" />
+    <None Include="Resources\add.png" />
     <Content Include="sounds\finish.wav">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

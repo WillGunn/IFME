@@ -19,13 +19,13 @@ namespace ifme
 {
     public partial class frmMain : Form
 	{
-		StringComparison IC = StringComparison.InvariantCultureIgnoreCase; // Just ignore case what ever it is.
+		StringComparison IC { get { return StringComparison.InvariantCultureIgnoreCase; } }
 
 		public frmMain()
 		{
 			InitializeComponent();
 
-			Icon = Properties.Resources.ifme5;
+			Icon = Properties.Resources.ifme_zenui;
 
 			pbxRight.Parent = pbxLeft;
 			pbxLeft.Image = Properties.Resources.BannerA;
@@ -67,13 +67,14 @@ namespace ifme
 				cboPictureBit.Items.Add("12");
 
 			// Audio
+			Dictionary<Guid, string> audio = new Dictionary<Guid, string>();
 			foreach (var item in Plugin.List)
-			{
-				if (item.Info.Type.ToLower() == "audio")
-				{
-					cboAudioEncoder.Items.Add(item.Profile.Name);
-				}
-			}
+				if (string.Equals("audio", item.Value.Info.Type, IC))
+					audio.Add(item.Key, item.Value.Profile.Name);
+
+			cboAudioEncoder.DisplayMember = "Value";
+			cboAudioEncoder.ValueMember = "Key";
+			cboAudioEncoder.DataSource = new BindingSource(audio, null);
 
 			// Add language list
 			foreach (var item in File.ReadAllLines("iso.code"))
@@ -119,13 +120,25 @@ namespace ifme
 
 			// Fun
 #if !STEAM
-			var TopThree = File.ReadAllLines(Path.Combine(Global.Folder.App, "metauser.if"));
-			Console.WriteLine("Top #3 donor");
-			Console.WriteLine("------------");
-			for (int i = 1; i <= 3; i++)
-				Console.WriteLine($"{i}. {TopThree[i]}");
+			if (File.Exists("metauser.if"))
+			{
+				var TopThree = File.ReadAllLines("metauser.if");
+				Console.WriteLine("Top #3 donor");
+				Console.WriteLine("------------");
+				for (int i = 1; i <= 3; i++)
+					Console.WriteLine($"{i}. {TopThree[i]}");
 
-			Console.WriteLine("\nThank You for your support!\nSupport & donate to IFME project via Paypal.\n");
+				Console.WriteLine("\nThank You for your support!\nSupport & donate to IFME project via Paypal.\n");
+			}
+			else
+			{
+				Console.ForegroundColor = ConsoleColor.Black;
+				Console.BackgroundColor = ConsoleColor.Red;
+				Console.WriteLine("\nERROR! Incomplete installation, this application will not working properly!\n");
+				Console.ResetColor();
+			}
+
+			
 #else
 			btnDonate.Visible = false;
 			btnFacebook.Visible = false;
@@ -140,29 +153,35 @@ namespace ifme
 
 			QueueListFile(ObjectIO.FileName);
 
-			// should fix ballon position: http://stackoverflow.com/a/4646021
-			tipUpdate.Show(null, pbxRight, 0); 
-			tipUpdate.IsBalloon = true;
-
+#if !STEAM
 			// Tell user there are new version can be downloaded
 			if (Global.App.NewRelease)
 			{
 				InvokeLog("New version available, visit: https://x265.github.io/");
+
+				// should fix ballon position: http://stackoverflow.com/a/4646021
+				tipUpdate.Show(null, pbxRight, 0);
+				tipUpdate.IsBalloon = true;
 
 				tipUpdate.ToolTipTitle = Language.TipUpdateTitle;
 				tipUpdate.Show(Language.TipUpdateMessage, pbxRight, 488, pbxRight.Height / 2, 30000);
 			}
 			else
 			{
-#if !STEAM
 				tipUpdate.ToolTipTitle = "Hi";
 				tipUpdate.Show(Language.Donate, btnDonate, btnDonate.Width / 2, btnDonate.Height / 2, 30000);
-#endif
 			}
+#endif
 		}
 
 		private void frmMain_FormClosing(object sender, FormClosingEventArgs e)
 		{
+			if (bgwEncoding.IsBusy)
+			{
+				e.Cancel = true;
+				return;
+			}
+
 			if (lstQueue.Items.Count > 1)
 			{
 				var MsgBox = MessageBox.Show(Language.Quit, null, MessageBoxButtons.YesNoCancel, MessageBoxIcon.Information);
@@ -172,8 +191,6 @@ namespace ifme
 						QueueListSaveAs();
 					else
 						QueueListSave();
-
-					btnQueueStop.PerformClick();
 				}
 				else if (MsgBox == DialogResult.Cancel)
 				{
@@ -233,12 +250,14 @@ namespace ifme
 				txtVideoValue.Text = p.Video.Value;
 				txtVideoCmd.Text = p.Video.Command;
 
-				bool exist = Plugin.IsExist(p.Audio.Encoder);
-                cboAudioEncoder.Text = exist ? p.Audio.Encoder : "Passthrough (Extract all audio)";
+				Plugin dummy;
+				bool exist = Plugin.List.TryGetValue(p.Audio.Encoder, out dummy);
+
+				cboAudioEncoder.SelectedValue = exist ? p.Audio.Encoder : new Guid("ffffffff-ffff-ffff-ffff-ffffffffffff");
 				cboAudioBit.Text = exist ? p.Audio.BitRate : "256";
 				cboAudioFreq.Text = exist ? p.Audio.Freq : "auto";
 				cboAudioChannel.Text = exist ? p.Audio.Chan : "auto";
-				txtAudioCmd.Text = exist ? p.Audio.Args: null;
+				txtAudioCmd.Text = exist ? p.Audio.Args: string.Empty;
 			}
 		}
 
@@ -310,7 +329,7 @@ namespace ifme
 			data["video"].AddKey("cmd", txtVideoCmd.Text);
 
 			data.Sections.AddSection("audio");
-			data["audio"].AddKey("encoder", cboAudioEncoder.Text);
+			data["audio"].AddKey("encoder", $"{cboAudioEncoder.SelectedValue}");
 			data["audio"].AddKey("bitrate", cboAudioBit.Text);
 			data["audio"].AddKey("frequency", cboAudioFreq.Text);
 			data["audio"].AddKey("channel", cboAudioChannel.Text);
@@ -441,12 +460,12 @@ namespace ifme
 		{
 			if (GetInfo.IsPathNetwork(file))
 			{
-				InvokeLog($"Rejected! Please mount as \"Network Drive\" File: {file}");
+				InvokeLog($"Rejected! Please mount as \"Network Drive\" like \"Z:\\\"");
 				return;
 			}
 
-			string FileType = null;
-			string FileOut = null;
+			string FileType = string.Empty;
+			string FileOut = string.Empty;
 			var Info = new Queue();
 
 			var i = cboProfile.SelectedIndex;			// Profiles
@@ -455,11 +474,14 @@ namespace ifme
 			Info.Data.File = file;
 			Info.Data.SaveAsMkv = i == 0 ? true : string.Equals(p.Info.Format, "mkv", IC);
 
+			// todo
+
 			MediaFile AVI = new MediaFile(file);
 
 			Info.Data.IsFileMkv = string.Equals(AVI.format, "Matroska", IC);
 			Info.Data.IsFileAvs = GetStream.IsAviSynth(file);
 
+			// Check if user want to force AviSynth script added to queue
 			if (!Plugin.IsExistAviSynth)
 			{
 				if (Info.Data.IsFileAvs)
@@ -505,24 +527,27 @@ namespace ifme
 					Info.Picture.YadifFlag = 0;
 				}
 			}
-			else
+			else if (Info.Data.IsFileAvs)
 			{
 				Info.Picture.Resolution = "auto";
 				Info.Picture.FrameRate = "auto";
 				Info.Picture.BitDepth = 8;
 				Info.Picture.Chroma = 420;
 
-				if (AVI.Audio.Count > 0)
-				{
-					var Audio = AVI.Audio[0];
-					FileType = $"{Path.GetExtension(file).ToUpper()} ({Audio.format})";
-					FileOut = $".{(Info.Data.SaveAsMkv ? "MKV" : "MP4")}";
-				}
-				else
-				{
-					FileType = "AviSynth Script";
-					FileOut = $".{(Info.Data.SaveAsMkv ? "MKV" : "MP4")} (HEVC)";
-				}
+				FileType = "AviSynth Script";
+				FileOut = $".{(Info.Data.SaveAsMkv ? "MKV" : "MP4")} (HEVC)";
+			}
+			else
+			{
+				Info.Picture.Resolution = "auto";
+				Info.Picture.FrameRate = "auto";
+				Info.Picture.BitDepth = 8;
+				Info.Picture.Chroma = 420;
+				Info.Picture.IsCopy = true;
+
+				var Audio = AVI.Audio[0];
+				FileType = $"{Path.GetExtension(file).ToUpper()} ({Audio.format})";
+				FileOut = $".{(Info.Data.SaveAsMkv ? "MKV" : "MP4")}";
 			}
 
 			// Video section
@@ -533,25 +558,29 @@ namespace ifme
 			Info.Video.Command = i == 0 ? "--dither" : p.Video.Command;
 
 			// Audio section
-			bool exist = Plugin.IsExist(p.Audio.Encoder);
-            string encoder = i == 0 || !exist ? "Passthrough (Extract all audio)" : p.Audio.Encoder;
+			Plugin dummy;
+			bool exist = Plugin.List.TryGetValue(p.Audio.Encoder, out dummy);
+
+            Guid encoder = i == 0 || !exist ? new Guid("ffffffff-ffff-ffff-ffff-ffffffffffff") : p.Audio.Encoder;
 			string bitRate = i == 0 || !exist ? "256" : p.Audio.BitRate;
 			string frequency = i == 0 || !exist ? "auto" : p.Audio.Freq;
 			string channel = i == 0 || !exist ? "auto" : p.Audio.Chan;
 			string command = i == 0 || !exist ? null : p.Audio.Args;
 
-			foreach (var item in GetStream.Media(file, StreamType.Audio))
-				Info.Audio.Add(new audio
+			foreach (var item in GetStream.Audio(file))
+				Info.Audio.Add(new Queue.audio
 				{
 					Enable = true,
-					Id = item.ID,
-					Lang = item.Lang,
-					Codec = item.Codec,
-					Format = item.Format,
+					File = file,
+					Embedded = true,
+					Id = item.Basic.Id,
+					Lang = item.Basic.Lang,
+					Codec = item.Basic.Codec,
+					Format = item.Basic.Format,
 
-					RawBit = item.AudioRawBit,
-					RawFreq = item.AudioRawFreq,
-					RawChan = item.AudioRawChan,
+					RawBit = item.RawBit,
+					RawFreq = item.RawFreq,
+					RawChan = item.RawChan,
 
 					Encoder = encoder,
 					BitRate = bitRate,
@@ -694,8 +723,9 @@ namespace ifme
 			txtVideoCmd.Text = Info.Video.Command;
 
 			// Audio
+			clbAudioTracks.Items.Clear(); // clear before add Git #64
 			foreach (var item in Info.Audio)
-				clbAudioTracks.Items.Add($"{item.Id}, {item.Lang}, {item.Format} ({item.Codec}), {item.RawFreq} Hz @ {item.RawBit} Bit ({item.RawChan} Channel)", item.Enable);
+				clbAudioTracks.Items.Add($"{item.Id}, {item.Lang}, {item.Format} ({item.Codec}), {item.RawFreq} Hz {item.RawBit} Bit @ {item.RawChan} Channel(s){(item.Embedded ? "" : "*")}", item.Enable);
 
 			/* Bitrate, Freq & Channel are inherit changes of Audio Encoder, refer to cboAudioEncoder_SelectedIndexChanged() */
 			if (clbAudioTracks.Items.Count > 0)
@@ -727,7 +757,9 @@ namespace ifme
 			grpPictureBasic.Enabled = !x;
 			grpPictureQuality.Enabled = !x;
 			chkPictureYadif.Enabled = !x;
-
+			btnAudioAdd.Enabled = !x;
+			btnAudioRemove.Enabled = !x;
+			clbAudioTracks.Enabled = !x;
 		}
 
 		void QueueUnselect()
@@ -763,18 +795,13 @@ namespace ifme
 		{
 			if (rdoMP4.Checked)
 			{
-				foreach (var item in Plugin.List)
+				Plugin test;
+				if (Plugin.List.TryGetValue((Guid)cboAudioEncoder.SelectedValue, out test))
 				{
-					if (string.Equals(item.Info.Type, "audio", IC))
+					if (!string.Equals(test.Info.Support, "mp4", IC))
 					{
-						if (string.Equals(item.Profile.Name, cboAudioEncoder.Text, IC))
-						{
-							if (!string.Equals(item.Info.Support, "mp4", IC))
-							{
-								InvokeLog($"Encoder \"{cboAudioEncoder.Text}\" was not supported by MP4, choose MKV or different encoder");
-								cboAudioEncoder.SelectedIndex = 1;
-                            }
-						}
+						InvokeLog($"Encoder \"{cboAudioEncoder.Text}\" was not supported by MP4, choose MKV or different encoder");
+						cboAudioEncoder.SelectedIndex = 1;
 					}
 				}
 			}
@@ -787,10 +814,10 @@ namespace ifme
 
 		private void cboPictureRes_Leave(object sender, EventArgs e)
 		{
-			Regex regex = new Regex("([0-9+x])|([auto])");
+			Regex regex = new Regex(@"(^\d{3,5}x\d{3,5}$)|^auto$");
 			MatchCollection matches = regex.Matches(cboPictureRes.Text);
 
-			if (matches.Count != cboPictureRes.Text.Length)
+			if (matches.Count == 0)
 			{
 				cboPictureRes.Text = "auto";
 				InvokeLog("Input resolution format was invalid, back to auto.");
@@ -810,10 +837,10 @@ namespace ifme
 
 		private void cboPictureFps_Leave(object sender, EventArgs e)
 		{
-			Regex regex = new Regex("([0-9+.])|([auto])");
+			Regex regex = new Regex(@"(^\d+$)|(^\d+.\d+$)|(^auto$)");
 			MatchCollection matches = regex.Matches(cboPictureFps.Text);
 
-			if (matches.Count != cboPictureFps.Text.Length)
+			if (matches.Count == 0)
 			{
 				cboPictureFps.Text = "auto";
 				InvokeLog("Input frame rate format was invalid, back to auto.");
@@ -880,42 +907,69 @@ namespace ifme
 
 		private void cboVideoType_SelectedIndexChanged(object sender, EventArgs e)
 		{
-			switch (cboVideoType.SelectedIndex)
+			if (lstQueue.SelectedItems.Count > 0)
 			{
-				case 0:
-					lblVideoRateH.Visible = true;
-					lblVideoRateL.Visible = true;
-					trkVideoRate.Visible = true;
+				string value = (lstQueue.SelectedItems[0].Tag as Queue).Video.Value;
+				float f;
 
-					trkVideoRate.Minimum = 0;
-					trkVideoRate.Maximum = 510;
-					trkVideoRate.TickFrequency = 10;
+				switch (cboVideoType.SelectedIndex)
+				{
+					case 0:
+						lblVideoRateH.Visible = true;
+						lblVideoRateL.Visible = true;
+						trkVideoRate.Visible = true;
 
-					lblVideoRateValue.Text = Language.Get[Name][lblVideoRateValue.Name];
-					txtVideoValue.Text = $"{(trkVideoRate.Value = 260) / 10:0.0}";
-                    break;
+						trkVideoRate.Minimum = 0;
+						trkVideoRate.Maximum = 510;
+						trkVideoRate.TickFrequency = 10;
 
-				case 1:
-					lblVideoRateH.Visible = true;
-					lblVideoRateL.Visible = true;
-					trkVideoRate.Visible = true;
+						lblVideoRateValue.Text = Language.Get[Name][lblVideoRateValue.Name];
 
-					trkVideoRate.Minimum = 0;
-					trkVideoRate.Maximum = 51;
-					trkVideoRate.TickFrequency = 1;
+						if (float.Parse(value) > 52.0)
+							value = "26.0";
 
-					lblVideoRateValue.Text = Language.Get[Name][lblVideoRateValue.Name];
-					txtVideoValue.Text = Convert.ToString(trkVideoRate.Value = 26);
-					break;
+						trkVideoRate.Value = Convert.ToInt32(Convert.ToDouble(value) * 10);
+						txtVideoValue.Text = value;
+						break;
 
-				default:
-					lblVideoRateH.Visible = false;
-					lblVideoRateL.Visible = false;
-					trkVideoRate.Visible = false;
+					case 1:
+						lblVideoRateH.Visible = true;
+						lblVideoRateL.Visible = true;
+						trkVideoRate.Visible = true;
 
-					lblVideoRateValue.Text = $"{Language.Get[Name][lblVideoRateValue.Name].Replace(":", "")} (kbps):";
-					txtVideoValue.Text = "2048";
-					break;
+						trkVideoRate.Minimum = 0;
+						trkVideoRate.Maximum = 51;
+						trkVideoRate.TickFrequency = 1;
+
+						lblVideoRateValue.Text = Language.Get[Name][lblVideoRateValue.Name];
+
+						if (float.TryParse(value, out f))
+							value = "26";
+
+						if (int.Parse(value) > 52)
+							value = "26";
+
+						trkVideoRate.Value = Convert.ToInt32(Convert.ToDouble(value));
+						txtVideoValue.Text = value;
+                        break;
+
+					default:
+						lblVideoRateH.Visible = false;
+						lblVideoRateL.Visible = false;
+						trkVideoRate.Visible = false;
+
+						lblVideoRateValue.Text = $"{Language.Get[Name][lblVideoRateValue.Name].Replace(":", "")} (kbps):";
+
+						if (float.TryParse(value, out f))
+							value = "1024";
+
+						if (int.Parse(value) < 128)
+							value = "1024";
+
+						trkVideoRate.Value = 0;
+						txtVideoValue.Text = value;
+						break;
+				}
 			}
 
 			QueueUpdate(QueueProp.VideoType);
@@ -925,25 +979,53 @@ namespace ifme
 		{
 			var i = cboVideoType.SelectedIndex;
 			if (i == 0)
+			{
 				if (!string.IsNullOrEmpty(txtVideoValue.Text))
+				{
 					if (Convert.ToDouble(txtVideoValue.Text) >= 51.0)
+					{
 						txtVideoValue.Text = "51";
+						trkVideoRate.Value = 510;
+					}
 					else if (Convert.ToDouble(txtVideoValue.Text) <= 0.0)
+					{
 						txtVideoValue.Text = "0";
+						trkVideoRate.Value = 0;
+					}
 					else
+					{
 						trkVideoRate.Value = Convert.ToInt32(Convert.ToDouble(txtVideoValue.Text) * 10.0);
+					}
+				}
 				else
+				{
 					trkVideoRate.Value = 0;
+				}
+			}
 			else if (i == 1)
+			{
 				if (!string.IsNullOrEmpty(txtVideoValue.Text))
+				{
 					if (Convert.ToInt32(txtVideoValue.Text) >= 51)
+					{
 						txtVideoValue.Text = "51";
+						trkVideoRate.Value = 51;
+					}
 					else if (Convert.ToInt32(txtVideoValue.Text) <= 0)
+					{
 						txtVideoValue.Text = "0";
+						trkVideoRate.Value = 0;
+					}
 					else
+					{
 						trkVideoRate.Value = Convert.ToInt32(txtVideoValue.Text);
+					}
+				}
 				else
+				{
 					trkVideoRate.Value = 0;
+				}
+			}
 		}
 
 		private void txtVideoValue_TextChanged(object sender, EventArgs e)
@@ -952,13 +1034,14 @@ namespace ifme
 		}
 
 		private void txtVideoValue_KeyPress(object sender, KeyPressEventArgs e)
-		{
-			if (!char.IsControl(e.KeyChar) && !char.IsDigit(e.KeyChar) && e.KeyChar != '.')
-				e.Handled = true;
+		{ 
+			if (cboVideoType.SelectedIndex == 0) // float
+				if (!char.IsControl(e.KeyChar) && !char.IsDigit(e.KeyChar) && !(e.KeyChar == '.'))
+					e.Handled = true;
 
-			// only allow one decimal point
-			if (e.KeyChar == '.' && (sender as TextBox).Text.IndexOf('.') > -1)
-				e.Handled = true;
+			if (cboVideoType.SelectedIndex >= 1) // int
+				if (!char.IsControl(e.KeyChar) && !char.IsDigit(e.KeyChar))
+					e.Handled = true;
 		}
 
 		private void trkVideoRate_ValueChanged(object sender, EventArgs e)
@@ -976,86 +1059,170 @@ namespace ifme
 		#endregion
 
 		#region Queue: Property update - Audio Tab
+		private void btnAudioAdd_Click(object sender, EventArgs e)
+		{
+			if (lstQueue.SelectedItems.Count == 1)
+			{
+				// Add new track after
+				OpenFileDialog GetFiles = new OpenFileDialog();
+				GetFiles.Filter = "Supported Audio Format|*.wav;*.wave;*.w64;*.mp2;*.mp3;*.mp4;*.m4a;*.aac;*.ogg;*.opus;*.flac;*.wma|"
+					+ "Waveform Audio File Format|*.wav;*.wave;*.w64|"
+					+ "MPEG Audio|*.mp2;*.mp3;*.mp4;*.m4a;*.aac|"
+					+ "Xiph.Org Foundation|*.ogg;*.opus;*.flac|"
+					+ "Windows Media|*.wma|"
+					+ "All Files|*.*";
+				GetFiles.FilterIndex = 1;
+				GetFiles.Multiselect = true;
+
+				if (GetFiles.ShowDialog() == DialogResult.OK)
+					foreach (var item in GetFiles.FileNames)
+						QueueAddAudio(item);
+
+				// Reload listing
+				QueueDisplay(lstQueue.SelectedItems[0].Index);
+			}
+		}
+
+		private void clbAudioTracks_DragEnter(object sender, DragEventArgs e)
+		{
+			if (e.Data.GetDataPresent(DataFormats.FileDrop))
+				e.Effect = DragDropEffects.Copy;
+		}
+
+		private void clbAudioTracks_DragDrop(object sender, DragEventArgs e)
+		{
+			if (lstQueue.SelectedItems.Count == 1)
+			{
+				string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
+				foreach (var file in files)
+					QueueAddAudio(file);
+
+				// Reload listing
+				QueueDisplay(lstQueue.SelectedItems[0].Index);
+			}
+		}
+
+		private void btnAudioRemove_Click(object sender, EventArgs e)
+		{
+			if (lstQueue.SelectedItems.Count == 1)
+			{
+				// Removing
+				for (int i = 0; i < clbAudioTracks.Items.Count; i++)
+					if (clbAudioTracks.GetSelected(i))
+						((Queue)lstQueue.SelectedItems[0].Tag).Audio.RemoveAt(i);
+
+				// Reload listing
+				QueueDisplay(lstQueue.SelectedItems[0].Index);
+			}
+		}
+
+		private void clbAudioTracks_KeyDown(object sender, KeyEventArgs e)
+		{
+			if (e.KeyCode == Keys.Delete)
+				btnAudioRemove.PerformClick(); // share code, fall back
+		}
+
+		private void QueueAddAudio(string file)
+		{
+			var Info = (Queue)lstQueue.SelectedItems[0].Tag;
+
+			foreach (var item in GetStream.Audio(file))
+				Info.Audio.Add(new Queue.audio
+				{
+					Enable = true,
+					File = file,
+					Embedded = false,
+					Id = item.Basic.Id,
+					Lang = item.Basic.Lang,
+					Codec = item.Basic.Codec,
+					Format = item.Basic.Format,
+
+					RawBit = item.RawBit,
+					RawFreq = item.RawFreq,
+					RawChan = item.RawChan,
+
+					Encoder = new Guid("ffffffff-ffff-ffff-ffff-ffffffffffff"),
+					BitRate = "256",
+					Freq = "auto",
+					Chan = "auto",
+					Args = string.Empty
+				});
+		}
+
 		private void clbAudioTracks_ItemCheck(object sender, ItemCheckEventArgs e)
 		{
-			// Ref: http://stackoverflow.com/a/17511730
-			// Due this event fire 2 times and no ItemChecked event,
-			// Apply this trick or hacks
-
-			// Copy
-			CheckedListBox clb = (CheckedListBox)sender;
-
-			// Switch off event handler
-			clb.ItemCheck -= clbAudioTracks_ItemCheck;
-			clb.SetItemCheckState(e.Index, e.NewValue);
-
-			// Switch on event handler
-			clb.ItemCheck += clbAudioTracks_ItemCheck;
-
-			// Do stuff
 			if (lstQueue.SelectedItems.Count == 1)
+			{
+				// Ref: http://stackoverflow.com/a/17511730
+				// Due this event fire 2 times and no ItemChecked event,
+				// Apply this trick or hacks
+
+				// Copy
+				CheckedListBox clb = (CheckedListBox)sender;
+
+				// Switch off event handler
+				clb.ItemCheck -= clbAudioTracks_ItemCheck;
+				clb.SetItemCheckState(e.Index, e.NewValue);
+
+				// Switch on event handler
+				clb.ItemCheck += clbAudioTracks_ItemCheck;
+
+				// Do stuff
 				(lstQueue.SelectedItems[0].Tag as Queue).Audio[e.Index].Enable = e.NewValue == CheckState.Checked ? true : false;
+			}	
 		}
 
 		private void clbAudioTracks_SelectedIndexChanged(object sender, EventArgs e)
 		{
-			if (clbAudioTracks.Items.Count > 0)
-			{
-				int i = clbAudioTracks.SelectedIndex;
-				var Info = (Queue)lstQueue.SelectedItems[0].Tag;
+			int i = clbAudioTracks.SelectedIndex;
+			var Info = (Queue)lstQueue.SelectedItems[0].Tag;
+			Plugin dummy;
 
-				cboAudioEncoder.Text = Info.Audio[i].Encoder;
-			}
+			if (Plugin.List.TryGetValue(Info.Audio[i].Encoder, out dummy))
+				cboAudioEncoder.SelectedValue = Info.Audio[i].Encoder;
+			else
+				cboAudioEncoder.SelectedIndex = 1; // default
 		}
 
 		private void cboAudioEncoder_SelectedIndexChanged(object sender, EventArgs e)
 		{
+			if (chkAudioMerge.Checked)
+				if (cboAudioEncoder.Items.Count > 1)
+					if (cboAudioEncoder.SelectedIndex < 2)
+						cboAudioEncoder.SelectedIndex = 2;
+
 			PluginAudioCheck();
 
-			foreach (var item in Plugin.List)
+			Plugin test;
+			var keyid = ((KeyValuePair<Guid, string>)cboAudioEncoder.SelectedItem).Key;
+
+            if (Plugin.List.TryGetValue(keyid, out test))
 			{
-				if (item.Info.Type.ToLower() == "audio")
+				cboAudioBit.Items.Clear();
+				cboAudioBit.Items.AddRange(test.App.Quality);
+								
+				if (clbAudioTracks.Items.Count > 0)
 				{
-					if (item.Profile.Name == cboAudioEncoder.Text)
-					{
-						// get value from
-						string bitrate = "256";
-						string freq = "auto";
-						string chan = "auto";
+					var n = (Queue)lstQueue.SelectedItems[0].Tag;
+					int i = clbAudioTracks.SelectedIndex;
 
-						// load
-						if (lstQueue.SelectedItems.Count > 0)
-						{
-							var Info = (Queue)lstQueue.SelectedItems[0].Tag;
-							if (clbAudioTracks.Items.Count > 0)
-							{
-								int i = clbAudioTracks.SelectedIndex;
+					cboAudioBit.Text = test.App.Default;
+					cboAudioFreq.SelectedIndex = 0;
+					cboAudioChannel.SelectedValue = 0;
 
-								bitrate = Info.Audio[i].BitRate;
-								freq = Info.Audio[i].Freq;
-								chan = Info.Audio[i].Chan;
-							}
-						}
+					foreach (var item in cboAudioBit.Items)
+						if (Equals(n.Audio[i].BitRate, item))
+							cboAudioBit.Text = n.Audio[i].BitRate;
 
-						cboAudioBit.Items.Clear();
-						cboAudioBit.Items.AddRange(item.App.Quality);
+					if (!string.IsNullOrEmpty(n.Audio[i].Freq))
+						cboAudioFreq.Text = n.Audio[i].Freq;
 
-						// display
-						foreach (string q in cboAudioBit.Items)
-							if (string.Equals(q, bitrate, IC))
-								cboAudioBit.Text = bitrate;
-							else
-								cboAudioBit.Text = item.App.Default;
+					if (!string.IsNullOrEmpty(n.Audio[i].Chan))
+						cboAudioChannel.Text = n.Audio[i].Chan;
 
-						cboAudioFreq.Text = freq;
-						cboAudioChannel.Text = chan;
-						txtAudioCmd.Text = item.Arg.Advance;
-
-						QueueUpdate(QueueProp.AudioEncoder);
-
-						return;
-					}
+					QueueUpdate(QueueProp.AudioEncoder);
 				}
+
 			}
 		}
 
@@ -1081,7 +1248,16 @@ namespace ifme
 
 			clbAudioTracks.Enabled = !chkAudioMerge.Checked;
 
-			QueueUpdate(QueueProp.AudioMerge);
+			if (chkAudioMerge.Checked)
+				if (cboAudioEncoder.Items.Count > 1)
+					if (cboAudioEncoder.SelectedIndex < 2)
+						cboAudioEncoder.SelectedIndex = 2;
+
+			if (clbAudioTracks.Items.Count > 1)
+				QueueUpdate(QueueProp.AudioMerge);
+			else
+				chkAudioMerge.Checked = false;
+			
 		}
 
 		private void txtAudioCmd_TextChanged(object sender, EventArgs e)
@@ -1163,7 +1339,7 @@ namespace ifme
 				return;
 
 			foreach (ListViewItem item in lstQueue.SelectedItems)
-				(item.Tag as Queue).Subtitle.Add(new subtitle() { File = file, Lang = "und (Undetermined)" });
+				(item.Tag as Queue).Subtitle.Add(new Queue.subtitle() { File = file, Lang = "und (Undetermined)" });
 
 			lstSub.Items.Add(new ListViewItem(new[] { GetInfo.FileName(file), "und (Undetermined)" }));
 		}
@@ -1274,7 +1450,7 @@ namespace ifme
 		void AttachAdd(string file)
 		{
 			foreach (ListViewItem item in lstQueue.SelectedItems)
-				(item.Tag as Queue).Attach.Add(new attachment() { File = file, MIME = GetInfo.AttachmentValid(file), Comment = "No" });
+				(item.Tag as Queue).Attach.Add(new Queue.attachment() { File = file, MIME = GetInfo.AttachmentValid(file), Comment = "No" });
 
 			lstAttach.Items.Add(new ListViewItem(new[] { GetInfo.FileName(file), GetInfo.AttachmentValid(file), "No" }));
 		}
@@ -1317,7 +1493,7 @@ namespace ifme
 			{
 				tipNotify.ToolTipIcon = ToolTipIcon.Warning;
 				tipNotify.ToolTipTitle = Language.TipUpdateTitle;
-				tipNotify.Show(Language.OneItem, lstQueue, lstQueue.Width / 4, lstQueue.Height / 2, 5000);
+				tipNotify.Show(Language.OneItem, tabConfig, 0, 0, 5000);
 			}
 
 			foreach (ListViewItem item in lstQueue.SelectedItems)
@@ -1395,8 +1571,8 @@ namespace ifme
 						break;
 
 					case QueueProp.AudioEncoder:
-						x.Audio[t].Encoder = cboAudioEncoder.Text;
-						break;
+						x.Audio[t].Encoder = ((KeyValuePair<Guid, string>)cboAudioEncoder.SelectedItem).Key;
+                        break;
 
 					case QueueProp.AudioBitRate:
 						x.Audio[t].BitRate = cboAudioBit.Text;
@@ -1432,7 +1608,7 @@ namespace ifme
 			{
 				foreach (var item in Directory.GetFiles(Path.Combine(Properties.Settings.Default.DirTemp), "video*"))
 				{
-					TaskManager.Run($"\"{Plugin.FPLAY}\" \"{item}\" > {OS.Null} 2>&1");
+					TaskManager.Run($"\"{Plugin.FFPLAY}\" \"{item}\" > {OS.Null} 2>&1");
 				}
 			}
 			else
@@ -1751,14 +1927,28 @@ namespace ifme
 							UTF8Encoding UTF8 = new UTF8Encoding(false);
 							string newfile = Path.Combine(Path.GetDirectoryName(item.Data.File), Path.GetFileNameWithoutExtension(item.Data.File)) + ".avs";
 
-							File.WriteAllText(newfile, $"{Properties.Settings.Default.AvsDecoder}(\"{item.Data.File}\")", UTF8);
+							File.WriteAllText(newfile, $"{Default.AvsDecoder}(\"{item.Data.File}\")", UTF8);
 
 							items.SubItems[0].Text = GetInfo.FileName(newfile);
 							items.SubItems[1].Text = GetInfo.FileSize(newfile);
 							items.SubItems[2].Text = "AviSynth Script";
 							item.Data.IsFileAvs = true;
 							item.Data.File = newfile;
-						}
+
+							item.Audio.Clear(); // reset
+							foreach (var audio in GetStream.Audio(newfile))
+								item.Audio.Add(new Queue.audio
+								{
+									Id = audio.Basic.Id,
+									Lang = audio.Basic.Lang,
+									Codec = audio.Basic.Codec,
+									Format = audio.Basic.Format,
+
+									RawFreq = audio.RawFreq,
+									RawBit = audio.RawBit,
+									RawChan = audio.RawChan
+								});
+                        }
 					}
 				}
 				else
@@ -1891,7 +2081,7 @@ namespace ifme
 
 				// Extract mkv embedded subtitle, font and chapter
 				InvokeQueueStatus(id, "Extracting");
-				MediaEncoder.Extract(file, item);
+				MediaEncoder.Extract(item);
 
 				// User cancel
 				if (bgwEncoding.CancellationPending)
@@ -1903,7 +2093,7 @@ namespace ifme
 
 				// Audio
 				InvokeQueueStatus(id, "Processing Audio");
-				MediaEncoder.Audio(file, item);
+				MediaEncoder.Audio(item);
 
 				// User cancel
 				if (bgwEncoding.CancellationPending)
@@ -1915,7 +2105,7 @@ namespace ifme
 
 				// Video
 				InvokeQueueStatus(id, "Processing Video");
-				MediaEncoder.Video(file, item);
+				MediaEncoder.Video(item);
 
 				// User cancel
 				if (bgwEncoding.CancellationPending)
@@ -2036,7 +2226,7 @@ namespace ifme
 			txtVideoCmd.Enabled = x;
 
 			clbAudioTracks.Enabled = x;
-			grpAudioBasic.Enabled = x;
+			//grpAudioBasic.Enabled = x;
 			chkAudioMerge.Enabled = x;
 			txtAudioCmd.Enabled = x;
 
@@ -2045,6 +2235,7 @@ namespace ifme
 
 			cboProfile.Enabled = x;
 			btnProfileSave.Enabled = x;
+			btnProfileDelete.Enabled = x;
 
 			txtDestination.Enabled = x;
 			btnBrowse.Enabled = x;

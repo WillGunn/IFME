@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Globalization;
 using System.IO;
-using System.Linq;
 
 using static ifme.Properties.Settings;
 
@@ -9,8 +8,8 @@ namespace ifme
 {
 	public class MediaEncoder
 	{
-		private static StringComparison IC = StringComparison.InvariantCultureIgnoreCase; // Just ignore case what ever it is.
-		private static string NULL = OS.Null;
+		static StringComparison IC { get { return StringComparison.InvariantCultureIgnoreCase; } }
+		private static string NULL { get { return OS.Null; } }
 
 		public static void CleanUp()
 		{
@@ -20,59 +19,55 @@ namespace ifme
 				File.Delete(files);
 		}
 
-		public static void Extract(string file, Queue item)
+		public static void Extract(Queue item)
 		{
-			if (item.Data.IsFileAvs)
-				file = GetStream.AviSynthGetFile(file);
-
-			if (string.IsNullOrEmpty(file))
+            if (string.IsNullOrEmpty(item.Data.File))
 				return;
+
+			string realfile = GetStream.AviSynthGetFile(item.Data.File);
 
 			if (item.Data.IsFileMkv || (item.Data.IsFileAvs && Default.AvsMkvCopy))
 			{
 				int sc = 0;
-				foreach (var subs in GetStream.Media(file, StreamType.Subtitle))
-					TaskManager.Run($"\"{Plugin.LIBAV}\" -i \"{file}\" -map {subs.ID} -y sub{sc++:0000}_{subs.Lang}.{subs.Format}");
+				foreach (var subs in GetStream.Subtitle(realfile))
+					TaskManager.Run($"\"{Plugin.FFMPEG}\" -i \"{realfile}\" -map {subs.Id} -y subtitle{sc++:0000}_{subs.Lang}.{subs.Format}");
 
+				TaskManager.Run($"\"{Plugin.FFMPEG}\" -dump_attachment:t \"\" -i \"{realfile}\" -y");
 
-				foreach (var font in GetStream.MediaMkv(file, StreamType.Attachment))
-					TaskManager.Run($"\"{Plugin.MKVEX}\" attachments \"{file}\" {font.ID}:\"{font.File}\"");
-
-				TaskManager.Run($"\"{Plugin.MKVEX}\" chapters \"{file}\" > chapters.xml");
+				TaskManager.Run($"\"{Plugin.MKVEXT}\" chapters \"{realfile}\" > chapters.xml");
 			}
 		}
 
-		public static void Audio(string file, Queue item)
+		public static void Audio(Queue item)
 		{
-			if (item.Data.IsFileAvs)
-				file = GetStream.AviSynthGetFile(file);
-
-			if (string.IsNullOrEmpty(file))
-				return;
-
-			string ffmap = "";
+			string ffile = string.Empty;
+			string ffmap = string.Empty;
 			string ffcmd = item.Picture.Command;
 
 			int counter = 0;
 			foreach (var track in item.Audio)
 			{
+				string file = track.File;
+
+				if (string.IsNullOrEmpty(file))
+					continue;
+
+				string freq = string.Equals(track.Freq, "auto", IC) ? $"{track.RawFreq}" : $"{track.Freq}";
 				string bit = $"{track.RawBit}";
-				string frequency = string.Equals(track.Freq, "auto", IC) ? $"{track.RawFreq}" : $"{track.Freq}";
-				string channel = string.Equals(track.Chan, "auto", IC) ? $"{track.RawChan}" : string.Equals(track.Chan, "stereo", IC) ? "2" : "1";
+				string chan = string.Equals(track.Chan, "auto", IC) ? $"{track.RawChan}" : string.Equals(track.Chan, "stereo", IC) ? "2" : "1";
 
 				if (item.AudioMerge)
 				{
 					counter++;
-					ffmap += $"-map {track.Id} ";
-					
+					ffile += $"-i \"{file}\"";
+                    ffmap += $"-map {track.Id} ";
+
 					if (item.Audio.Count == counter)
 					{
-						foreach (var codec in Plugin.List)
+						Plugin codec;
+						if (Plugin.List.TryGetValue(item.Audio[0].Encoder, out codec))
 						{
-							if (string.Equals(item.Audio[0].Encoder, codec.Profile.Name, IC))
-							{
-								TaskManager.Run($"\"{Plugin.LIBAV}\" -i \"{file}\" {ffmap} -filter_complex amix=inputs={counter}:duration=first:dropout_transition=0 -f s{bit}le -ar {frequency} -ac {channel} {ffcmd} - 2> {NULL} | \"{codec.App.Bin}\" {string.Format(codec.Arg.Raw, frequency, bit, channel)} {codec.Arg.Input} {codec.Arg.Bitrate} {track.BitRate} {track.Args} {codec.Arg.Output} audio0000_und.{codec.App.Ext}");
-							}
+							TaskManager.Run($"\"{Plugin.FFMPEG}\" {ffile} {ffmap} -filter_complex amix=inputs={counter}:duration=first:dropout_transition=0 -acodec pcm_s{bit}le -ar {freq} -ac {chan} -f wav {ffcmd} - | \"{codec.App.Bin}\" {(string.IsNullOrEmpty(codec.Arg.Raw) ? string.Empty : string.Format(codec.Arg.Raw, freq, bit, chan))} {codec.Arg.Input} {codec.Arg.Bitrate} {track.BitRate} {track.Args} {codec.Arg.Output} audio0000_und.{codec.App.Ext}");
 						}
 					}
 				}
@@ -81,36 +76,70 @@ namespace ifme
 					if (!track.Enable)
 						continue;
 
-					if (string.Equals(track.Encoder, "No Audio", IC))
+					if (Equals(new Guid("00000000-0000-0000-0000-000000000000"), track.Encoder))
 					{
-						// Do noting
+						continue;
 					}
-					else if (string.Equals(track.Encoder, "Passthrough (Extract all audio)", IC))
+
+					Plugin codec;
+
+					if (Plugin.List.TryGetValue(track.Encoder, out codec) &&
+						!Equals(new Guid("ffffffff-ffff-ffff-ffff-ffffffffffff"), track.Encoder))
 					{
-						if (item.Data.SaveAsMkv)
+						if (Convert.ToInt32(bit) >= 32)
+							bit = "24"; // force to 24bit max
+
+						string rawArgs = string.Empty;
+
+						try
 						{
-							TaskManager.Run($"\"{Plugin.LIBAV}\" -i \"{file}\" -map {track.Id} -dn -vn -sn -acodec copy {ffcmd} -y audio{counter++:0000}_{track.Lang}.{track.Format}");
+							if (!string.IsNullOrEmpty(codec.Arg.Raw))
+								rawArgs = string.Format(codec.Arg.Raw, freq, bit, chan);
+						}
+						catch (Exception e)
+						{
+							Console.ForegroundColor = ConsoleColor.Red;
+							Console.Error.WriteLine($"Raw arguments incomplete, ignored!\n{e}");
+							Console.ResetColor();
+						}
+
+						string encArgs = $"\"{codec.App.Bin}\" {rawArgs} {codec.Arg.Input} {codec.Arg.Bitrate} {track.BitRate} {track.Args} {codec.Arg.Output} audio{counter++:0000}_{track.Lang}.{codec.App.Ext}";
+
+						if (item.Data.IsFileAvs)
+						{
+							TaskManager.Run($"\"{Plugin.AVSPIPE}\" audio \"{file}\" | \"{Plugin.FFMPEG}\" -loglevel panic -i - -acodec pcm_s{bit}le -f wav - | {encArgs}"); // double pipe due some encoder didn't read avs2pipe properly, example: opusenc.exe
 						}
 						else
 						{
-							if (string.Equals("mp4", track.Format))
-							{
-								TaskManager.Run($"\"{Plugin.LIBAV}\" -i \"{file}\" -map {track.Id} -dn -vn -sn -acodec copy {ffcmd} -y audio{counter++:0000}_{track.Lang}.{track.Format}");
-							}
-							else
-							{
-								TaskManager.Run($"\"{Plugin.LIBAV}\" -i \"{file}\" -map {track.Id} -dn -vn -sn -strict -2 -c:a aac -b:a {track.BitRate}k -ar {frequency} -ac {channel} -y audio{counter++:0000}_{track.Lang}.mp4");
-							}
+							TaskManager.Run($"\"{Plugin.FFMPEG}\" -loglevel panic -i \"{file}\" -map {track.Id} -acodec pcm_s{bit}le -ar {freq} -ac {chan} -f wav {ffcmd} - | {encArgs}");
 						}
 					}
 					else
 					{
-						foreach (var codec in Plugin.List)
+						if (item.Data.IsFileAvs)
 						{
-							if (string.Equals(codec.Profile.Name, track.Encoder, IC))
+							TaskManager.Run($"{Plugin.AVSPIPE} audio \"{file}\" | {Plugin.FFMPEG} -i - -dn -vn -sn -strict -2 -c:a aac -b:a {track.BitRate}k -ar {freq} -ac {chan} -y audio{counter++:0000}_{track.Lang}.mp4");
+						}
+						else if (item.Data.SaveAsMkv)
+						{
+							if (string.Equals("wma", track.Format, IC))
 							{
-								TaskManager.Run($"\"{Plugin.LIBAV}\" -i \"{file}\" -map {track.Id} -f s{bit}le -ar {frequency} -ac {channel} {ffcmd} - 2> {NULL} | \"{codec.App.Bin}\" {string.Format(codec.Arg.Raw, frequency, bit, channel)} {codec.Arg.Input} {codec.Arg.Bitrate} {track.BitRate} {track.Args} {codec.Arg.Output} audio{counter++:0000}_{track.Lang}.{codec.App.Ext}");
-								break;
+								TaskManager.Run($"\"{Plugin.FFMPEG}\" -i \"{file}\" -map {track.Id} -dn -vn -sn -strict -2 -c:a aac -b:a {track.BitRate}k -ar {freq} -ac {chan} -y audio{counter++:0000}_{track.Lang}.mp4");
+							}
+							else
+							{
+								TaskManager.Run($"\"{Plugin.FFMPEG}\" -i \"{file}\" -map {track.Id} -dn -vn -sn -acodec copy {ffcmd} -y audio{counter++:0000}_{track.Lang}.{track.Format}");
+							}
+						}
+						else
+						{
+							if (string.Equals("mp4", track.Format, IC))
+							{
+								TaskManager.Run($"\"{Plugin.FFMPEG}\" -i \"{file}\" -map {track.Id} -dn -vn -sn -acodec copy {ffcmd} -y audio{counter++:0000}_{track.Lang}.{track.Format}");
+							}
+							else
+							{
+								TaskManager.Run($"\"{Plugin.FFMPEG}\" -i \"{file}\" -map {track.Id} -dn -vn -sn -strict -2 -c:a aac -b:a {track.BitRate}k -ar {freq} -ac {chan} -y audio{counter++:0000}_{track.Lang}.mp4");
 							}
 						}
 					}
@@ -118,20 +147,23 @@ namespace ifme
 			}
 		}
 
-		public static void Video(string file, Queue item)
+		public static void Video(Queue item)
 		{
-			foreach (var video in GetStream.Media(file, StreamType.Video))
+			string file = item.Data.File;
+
+            foreach (var video in GetStream.Video(file))
 			{
 				// Copy
 				if (item.Picture.IsHevc)
 				{
 					if (item.Picture.IsCopy)
 					{
-						TaskManager.Run($"\"{Plugin.LIBAV}\" -i \"{file}\" -map {video.ID} -c:v copy -bsf hevc_mp4toannexb -y video0000_{video.Lang}.hevc");
+						TaskManager.Run($"\"{Plugin.FFMPEG}\" -i \"{file}\" -map {video.Id} -c:v copy -bsf hevc_mp4toannexb -y video0000_{video.Lang}.hevc");
 						return;
 					}
 				}
 
+				
 				// ffmpeg settings
 				string resolution = string.Equals(item.Picture.Resolution, "auto", IC) ? "" : $"-s {item.Picture.Resolution}";
 				string framerate = string.Equals(item.Picture.FrameRate, "auto", IC) ? "" : $"-r {item.Picture.FrameRate}";
@@ -167,7 +199,7 @@ namespace ifme
 					framecount = GetStream.AviSynthFrameCount(file);
 
 				// x265 settings
-				string decbin = Plugin.LIBAV;
+				string decbin = Plugin.FFMPEG;
                 string encbin = Plugin.HEVC08;
 				string preset = item.Video.Preset;
 				string tune = string.Equals(item.Video.Tune, "off", IC) ? "" : $"--tune {item.Video.Tune}";
@@ -177,11 +209,11 @@ namespace ifme
 				string command = item.Video.Command;
 
 				if (item.Data.IsFileAvs)
-					decbin = Plugin.AVS4P;
+					decbin = Plugin.AVSPIPE;
 
 				string decoder = item.Data.IsFileAvs ? 
 					$"\"{decbin}\" video \"{file}\"" : 
-					$"\"{decbin}\" -i \"{file}\" -vsync {vsync} -f yuv4mpegpipe -pix_fmt {chroma} -strict -1 {resolution} {framerate} {yadif} {ffcmd} -";
+					$"\"{decbin}\" -loglevel panic -i \"{file}\" -vsync {vsync} -f yuv4mpegpipe -pix_fmt {chroma} -strict -1 {resolution} {framerate} {yadif} {ffcmd} -";
 
 				if (bitdepth == 10)
 					encbin = Plugin.HEVC10;
@@ -191,7 +223,7 @@ namespace ifme
 				string encoder = $"\"{encbin}\" --y4m - -p {preset} {(type == 0 ? "--crf" : type == 1 ? "--qp" : "--bitrate")} {value} {command} -o video0000_{video.Lang}.hevc";
 
 				// Encoding start
-				if (type-- >= 3) // multi pass
+				if ((--type) >= 3) // multi pass
 				{
 					for (int i = 0; i < type; i++)
 					{
@@ -205,13 +237,13 @@ namespace ifme
 						if (i == 1) // get actual frame count
 							framecount = GetStream.FrameCount(Path.Combine(Default.DirTemp, $"video0000_{video.Lang}.hevc"));
 
-						Console.WriteLine($"Pass {i + 1} of {type + 1}"); // human read no index
-						TaskManager.Run($"{decoder} 2> {NULL} | {encoder} -f {framecount} --pass {pass}");
+						Console.WriteLine($"Pass {i + 1} of {type}"); // human read no index
+						TaskManager.Run($"{decoder} | {encoder} -f {framecount} --pass {pass}");
 					}
 				}
 				else
 				{
-					TaskManager.Run($"{decoder} 2> {NULL} | {encoder} -f {framecount}");
+					TaskManager.Run($"{decoder} | {encoder} -f {framecount}");
 				}
 
 				break;
@@ -222,24 +254,28 @@ namespace ifme
 		{
 			// Final output, a file name without extension
 			string savedir = Default.IsDirOutput ? Default.DirOutput : Path.GetDirectoryName(item.Data.File);
-			string newfile = Path.GetFileNameWithoutExtension(item.Data.File);
-			string prefix = Default.IsDirOutput ? Default.NamePrefix : string.IsNullOrEmpty(Default.NamePrefix) ? "[encoded] " : Default.NamePrefix + " ";
-            string fileout = Path.Combine(savedir, $"{prefix}{newfile}");
+			string prefix = string.IsNullOrEmpty(Default.NamePrefix) ? string.Empty : Default.NamePrefix + " ";
+            string newfile = Path.GetFileNameWithoutExtension(item.Data.File);
+			string fileout = Path.Combine(savedir, $"{prefix}{newfile}");
 
 			// Destinantion folder check
 			if (!Directory.Exists(Default.DirOutput))
 				Directory.CreateDirectory(Default.DirOutput);
+
+			// File exist check
+			if (File.Exists($"{fileout}.mp4") || File.Exists($"{fileout}.mkv"))
+				fileout += $"_encoded-{DateTime.Now:yyyyMMdd_HHmmss}";
 
 			if (item.Data.SaveAsMkv)
 			{
 				fileout += ".mkv";
 
 				string tags = string.Format(Properties.Resources.Tags, Global.App.NameFull, Global.App.VersionCompiled);
-                string cmdvideo = null;
-				string cmdaudio = null;
-				string cmdsubs = null;
-				string cmdattach = null;
-				string cmdchapter = null;
+                string cmdvideo = string.Empty;
+				string cmdaudio = string.Empty;
+				string cmdsubs = string.Empty;
+				string cmdattach = string.Empty;
+				string cmdchapter = string.Empty;
 
 				foreach (var tc in Directory.GetFiles(Default.DirTemp, "timecode_*"))
 				{
@@ -265,7 +301,7 @@ namespace ifme
 				}
 				else
 				{
-					foreach (var subs in Directory.GetFiles(Default.DirTemp, "sub*"))
+					foreach (var subs in Directory.GetFiles(Default.DirTemp, "subtitle*"))
 					{
 						cmdsubs += $"--sub-charset 0:UTF-8 --language 0:{GetInfo.FileLang(subs)} \"{subs}\" ";
 					}
@@ -295,6 +331,11 @@ namespace ifme
 						cmdattach += $"--attach-file \"{attach}\" ";
 					}
 
+					foreach (var attach in Directory.GetFiles(Default.DirTemp, "*.ttc"))
+					{
+						cmdattach += $"--attach-file \"{attach}\" ";
+					}
+
 					foreach (var attach in Directory.GetFiles(Default.DirTemp, "*.pfb"))
 					{
 						cmdattach += $"--attachment-mime-type application/x-font --attach-file \"{attach}\" ";
@@ -309,15 +350,15 @@ namespace ifme
 				}
 
 				File.WriteAllText(Path.Combine(Default.DirTemp, "tags.xml"), tags);
-                TaskManager.Run($"\"{Plugin.MKVME}\" -o \"{fileout}\" --disable-track-statistics-tags -t 0:tags.xml {cmdvideo} {cmdaudio} {cmdsubs} {cmdattach} {cmdchapter}");
+                TaskManager.Run($"\"{Plugin.MKVMER}\" -o \"{fileout}\" --disable-track-statistics-tags -t 0:tags.xml {cmdvideo} {cmdaudio} {cmdsubs} {cmdattach} {cmdchapter}");
 			}
 			else
 			{
 				fileout += ".mp4";
 
-				string timecode = null;
-				string cmdvideo = null;
-				string cmdaudio = null;
+				string timecode = string.Empty;
+				string cmdvideo = string.Empty;
+				string cmdaudio = string.Empty;
 
 				foreach (var tc in Directory.GetFiles(Default.DirTemp, "timecode_*"))
 				{
@@ -338,12 +379,12 @@ namespace ifme
 
 				if (string.IsNullOrEmpty(timecode))
 				{
-					TaskManager.Run($"\"{Plugin.MP4BX}\" {cmdvideo} {cmdaudio} -itags tool=\"{Global.App.NameFull}\" -new \"{fileout}\"");
+					TaskManager.Run($"\"{Plugin.MP4BOX}\" {cmdvideo} {cmdaudio} -itags tool=\"{Global.App.NameFull}\" -new \"{fileout}\"");
 				}
 				else
 				{
-					TaskManager.Run($"\"{Plugin.MP4BX}\" {cmdvideo} {cmdaudio} -itags tool=\"{Global.App.NameFull}\" -new _desu.mp4");
-					TaskManager.Run($"\"{Plugin.MP4FP}\" -t \"{timecode}\" _desu.mp4 -o \"{fileout}\"");
+					TaskManager.Run($"\"{Plugin.MP4BOX}\" {cmdvideo} {cmdaudio} -itags tool=\"{Global.App.NameFull}\" -new _desu.mp4");
+					TaskManager.Run($"\"{Plugin.MP4FPS}\" -t \"{timecode}\" _desu.mp4 -o \"{fileout}\"");
 				}
 			}
 		}

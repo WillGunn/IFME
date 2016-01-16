@@ -20,6 +20,9 @@ namespace ifme
 			// Never comma under decimal/floating points
 			Thread.CurrentThread.CurrentCulture = CultureInfo.InvariantCulture;
 
+			// Modify current working directory, portable!
+			Environment.CurrentDirectory = Global.Folder.Root;
+
 			// Essential Stuff
 			Title = $"{Global.App.Name} Console";
 
@@ -39,6 +42,15 @@ namespace ifme
 			// Command
 			if (Command(args) == 0)
 				return 0;
+
+#if !STEAM
+			// Update check
+			if (!ApplyUpdate)
+			{
+				string version = new Download().GetString("https://x265.github.io/update/version.txt");
+				Global.App.NewRelease = string.IsNullOrEmpty(version) ? false : string.Equals(Global.App.VersionRelease, version) ? false : true;
+			}
+#endif
 
 			// Splash Screen, loading and update
 			SplashScreen();
@@ -175,7 +187,7 @@ namespace ifme
 				{
 					if (!IsGUI)
 					{
-						MessageBox.Show("Please use \"ifme-xterm\" to run, this intend for CLI.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+						MessageBox.Show("Under linux, please use \"ifme-xterm\" to run, this intend for CLI.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
 						DisplayHelp();
 						return 0;
 					}
@@ -255,9 +267,6 @@ namespace ifme
 		static void MainForm()
 		{
 			Title = $"{Global.App.Name} Console";
-
-			Clear();
-			Head();
 
 			ForegroundColor = ConsoleColor.Green;
 			WriteLine(" ________________________________________");
@@ -355,17 +364,17 @@ namespace ifme
 				string file = item.Data.File;
 
 				// Extract mkv embedded subtitle, font and chapter
-				MediaEncoder.Extract(file, item);
+				MediaEncoder.Extract(item);
 
 				// Audio
-				MediaEncoder.Audio(file, item);
+				MediaEncoder.Audio(item);
 
 				// Tell User
 				WriteLine($"File: {Path.GetFileName(item.Data.File)}");
 				WriteLine($"Current queue {id + 1} of {argList.Count}");
 
 				// Video
-				MediaEncoder.Video(file, item);
+				MediaEncoder.Video(item);
 
 				// Mux
 				MediaEncoder.Mux(item);

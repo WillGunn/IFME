@@ -8,322 +8,290 @@ using IniParser;
 using IniParser.Model;
 
 using static ifme.Properties.Settings;
+using System.Text.RegularExpressions;
 
 namespace ifme
 {
-	public enum StreamType
-	{
-		Video,
-		Audio,
-		Subtitle,
-		Attachment
-	}
-
-	public class StreamMedia
-	{
-		public string ID;
-		public string Lang;
-		public string Codec;
-		public string Format;
-
-		public int AudioRawBit;
-		public int AudioRawFreq;
-		public int AudioRawChan;
-	}
-
-	public class StreamMatroska
-	{
-		public string ID;
-		public string Mime;
-		public string File;
-	}
-
 	public class GetStream
 	{
-		private static StringComparison IC = StringComparison.InvariantCultureIgnoreCase; // Just ignore case what ever it is.
-
-		private static IniData GetFmt { get { return new FileIniDataParser().ReadFile(Path.Combine(Global.Folder.App, "format.ini"), Encoding.UTF8); } }
-
-        public static List<StreamMedia> Media(string file, StreamType kind)
+		public class basic
 		{
-			List<StreamMedia> Items = new List<StreamMedia>();
-			string Kind = string.Empty;
+			public string Id;
+			public string Lang;
+			public string Codec;
+			public string Format;
+		}
 
-			switch (kind)
+		public class audio
+		{
+			public basic Basic;
+			public int RawBit;
+			public int RawFreq;
+			public int RawChan;
+		}
+
+		public class matroska
+		{
+			public string ID;
+			public string Mime;
+			public string File;
+		}
+
+		private static StringComparison IC { get { return StringComparison.InvariantCultureIgnoreCase; } }
+		private static IniData GetFmt { get { return new FileIniDataParser().ReadFile("format.ini", Encoding.UTF8); } }
+		private static string IdFFm { get { return Path.Combine(Default.DirTemp, "ffmpeg.id"); } }
+		private static string IdMkv { get { return Path.Combine(Default.DirTemp, "mkvtoolnix.id"); } }
+		private static string IdAvs { get { return Path.Combine(Default.DirTemp, "avisynth.id"); } }
+
+		private static basic Basic(string kind, string data)
+		{
+			// Basic
+			string id = string.Empty;
+			string lang = "und";
+			string codec = string.Empty;
+			string format = string.Empty;
+
+			// Besure it's right line
+			if (data.Contains("Stream #"))
 			{
-				case StreamType.Video:
-					Kind = "Video";
-					break;
-				case StreamType.Audio:
-					Kind = "Audio";
-					break;
-				case StreamType.Subtitle:
-					Kind = "Subtitle";
-					break;
-				case StreamType.Attachment:
-					Kind = "Attachment";
-					break;
+				// ID section
+				Regex regId = new Regex(@"#(\d+:\d+)");
+				Match matchId = regId.Match(data);
+
+				if (matchId.Success)
+				{
+					id = matchId.Groups[1].Value;
+                }
+
+				// Lang section
+				Regex regLang = new Regex(@"\(([a-z]{3})\):");
+				Match matchLang = regLang.Match(data);
+
+				if (matchLang.Success)
+				{
+					lang = matchLang.Groups[1].Value;
+                }
+
+				// Codec section
+				Regex regCodec = new Regex($@"{kind}: (\w+)");
+				Match matchCodec = regCodec.Match(data);
+
+				if (matchCodec.Success)
+				{
+					codec = matchCodec.Groups[1].Value;
+                }
+
+				try
+				{
+					format = GetFmt["format"][codec];
+				}
+				catch (Exception)
+				{
+					Console.WriteLine("Requested query not found, using default");
+				}
+				finally
+				{
+					if (string.IsNullOrEmpty(format))
+						format = codec;
+				}
 			}
 
-			if (IsAviSynth(file) && StreamType.Video == kind)
+			return new basic { Id = id, Lang = lang, Codec = codec, Format = format };
+		}
+
+		public static List<basic> Video(string file)
+		{
+			List<basic> Items = new List<basic>();
+			string kind = "Video";
+
+			if (IsAviSynth(file))
 			{
-				Items.Add(new StreamMedia() { ID = "0:0", Lang = "und", Format = "avs", Codec = "avs" }); // send fake data for AviSynth
+				Items.Add(new basic() { Id = "0:0", Lang = "und", Format = "avs", Codec = "avs" });
 				return Items;
 			}
 			else
 			{
-				// Get internal media file
-				file = AviSynthGetFile(file);
-			}
-
-			TaskManager.Run($"\"{Plugin.PROBE}\" \"{file}\" 2> streams.id");
-			foreach (var item in File.ReadAllLines(Path.Combine(Default.DirTemp, "streams.id")))
-			{
-				if (item.Contains("Stream #"))
+				TaskManager.Run($"\"{Plugin.FFPROBE}\" \"{file}\" 2> {IdFFm}");
+				foreach (var item in File.ReadAllLines(IdFFm))
 				{
-					string id = string.Empty;
-					string lang = string.Empty;
-					string codec = string.Empty;
-					string format = string.Empty;
-
-					// Audio
-					string audiobit = "0";
-					string audiofreq = "0";
-					string audiochan = "0";
-
-					if (item.Contains(Kind))
+					if (item.Contains("Stream #"))
 					{
-						// Basic data
-						for (int i = item.IndexOf('#') + 1; i < item.Length; i++)
+						if (item.Contains(kind))
 						{
-							if (item[i] == '(')
-								break;
-							if (item[i] == '[')
-								break;
-							if (item[i] == ':' && id.Contains(':'))
-								break;
+							// Basic section
+							var Common = Basic(kind, item);
 
-							id += item[i];
-						}
-
-						if (item[item.IndexOf(Kind) - 3] == ')')
-							lang = item.Substring(item.IndexOf('(') + 1, item.IndexOf(')') - (item.IndexOf('(') + 1));
-						else
-							lang = "und";
-
-						int x = item.IndexOf(Kind) + (Kind.Length + 2);
-						for (int i = x; i < item.Length; i++)
-						{
-							if (item[i] == ' ')
-								break;
-							if (item[i] == ',')
-								break;
-
-							codec += item[i];
-						}
-
-						try
-						{
-							format = GetFmt["format"][codec];
-						}
-						catch (Exception)
-						{
-							Console.WriteLine("Requested query not found, using default");
-						}
-						finally
-						{
-							if (string.IsNullOrEmpty(format))
-								format = codec;
-						}
-
-						// Audio data
-						if (kind == StreamType.Audio)
-						{
-							// Re init
-							audiobit = string.Empty;
-							audiofreq = string.Empty;
-							audiochan = string.Empty;
-
-							if (item.Contains(Kind))
+							// Add
+							Items.Add(new basic()
 							{
-								// Frequency
-								for (int i = item.IndexOf("Hz, ") - 2; i > -1; i--)
-								{
-									if (item[i] == ' ')
-										break;
-
-									if (char.IsDigit(item[i]))
-										audiofreq += item[i];
-								}
-
-								audiofreq = new string(audiofreq.Reverse().ToArray());
-
-								// Channel
-								for (int i = item.IndexOf("Hz, ") + 4; i < item.Length; i++)
-								{
-									if (item[i] == ',')
-										break;
-
-									if (item[i] == '(')
-										break;
-
-									audiochan += item[i];
-								}
-
-								if (string.Equals("stereo", audiochan, IC))
-									audiochan = "2";
-								else if (string.Equals("mono", audiochan, IC))
-									audiochan = "1";
-								else if (!string.IsNullOrEmpty(audiochan))
-									audiochan = $"{Convert.ToInt32(audiochan.Split('.')[0]) + Convert.ToInt32(audiochan.Split('.')[1])}";
-								else
-									audiochan = "2"; // default
-
-								// Bit
-								for (int i = item.IndexOf("Hz, ") + 4; i < item.Length; i++)
-								{
-									if (item[i] == ',')
-									{
-										i += 2;
-
-										while (i < item.Length)
-										{
-											if (item[i] == ',')
-												break;
-
-											if (char.IsDigit(item[i]))
-												audiobit += item[i];
-
-											i++;
-										}
-
-										break;
-									}
-								}
-
-								if (string.IsNullOrEmpty(audiobit))
-									audiobit = "16"; // fltp (32 bits floats, planar) use for decode lossy codec
-							}
-                        }
-
-						Items.Add(new StreamMedia() {
-							ID = id,
-							Lang = lang,
-							Codec = codec,
-							Format = format,
-
-							AudioRawBit = Convert.ToInt32(audiobit),
-							AudioRawFreq = Convert.ToInt32(audiofreq),
-							AudioRawChan = Convert.ToInt32(audiochan)
-						});
+								Id = Common.Id,
+								Lang = Common.Lang,
+								Codec = Common.Codec,
+								Format = Common.Format
+							});
+						}
 					}
 				}
-			}
+            }
+
 			return Items;
 		}
 
-		public static List<StreamMatroska> MediaMkv(string file, StreamType kind)
+		public static List<audio> Audio(string file)
 		{
-			List<StreamMatroska> Items = new List<StreamMatroska>();
-			string Kind = string.Empty;
+			List<audio> Items = new List<audio>();
+			string kind = "Audio";
 
-			switch (kind)
+			if (IsAviSynth(file))
 			{
-				case StreamType.Video:
-					Kind = "video";
-					break;
-				case StreamType.Audio:
-					Kind = "audio";
-					break;
-				case StreamType.Subtitle:
-					Kind = "subtitles";
-					break;
-				case StreamType.Attachment:
-					Kind = "Attachment";
-					break;
-			}
+				int bit = 0;
+				int freq = 0;
+				int chan = 0;
 
-			TaskManager.Run($"\"{Path.Combine(Global.Folder.Plugins, "mkvtool", "mkvmerge")}\" -i \"{file}\" > list.id");
-			foreach (var x in File.ReadAllLines(Path.Combine(Default.DirTemp, "list.id")))
-			{
-				if (kind == StreamType.Attachment)
+				TaskManager.Run($"\"{Plugin.AVSPIPE}\" info \"{file}\" > {IdAvs}");
+				foreach (var item in File.ReadAllLines(IdAvs))
 				{
-					if (x.Contains(Kind))
+					if (item.Contains("a:sample_rate"))
+						freq = int.Parse(item.Substring(14));
+
+					if (item.Contains("a:bit_depth"))
+						bit = int.Parse(item.Substring(14));
+
+					if (item.Contains("a:channels"))
+						chan = int.Parse(item.Substring(14));
+                }
+
+				if (freq == 0 || bit == 0 || chan == 0)
+					return Items;
+
+				Items.Add(new audio()
+				{
+					Basic = new basic
 					{
-						string id = null;
-						string fn = null;
-						string me = null;
-						char[] f = x.ToCharArray();
+						Id = "0:0",
+						Lang = "und",
+						Codec = "pcm",
+						Format = "avs",
+					},
 
-						for (int i = 0; i < f.Length; i++)
+					RawFreq = freq,
+					RawBit = bit,
+					RawChan = chan
+				});
+
+				return Items;
+			}
+			else
+			{
+				TaskManager.Run($"\"{Plugin.FFPROBE}\" \"{file}\" 2> {IdFFm}");
+				foreach (var item in File.ReadAllLines(IdFFm))
+				{
+					if (item.Contains("Stream #"))
+					{
+						if (item.Contains(kind))
 						{
-							if (f[i] == ':')
-								break;
+							// Basic section
+							var Common = Basic(kind, item);
 
-							if (char.IsNumber(f[i]))
-								id += f[i];
-						}
+							// Audio section
+							int bit = 24;
+							int freq = 48000;
+							int chan = 2;
 
-						for (int i = f.Length - 1; i > 0; i--)
-						{
-							if (f[i] == '\'' && f[i - 1] == ' ')
-								break;
+							// Frequency
+							Regex regFreq = new Regex(@"\d{4,6} Hz");
+							Match matchFreq = regFreq.Match(item);
 
-							if (f[i] == '\'')
-								continue;
-
-							fn += f[i];
-						}
-
-						char[] tmp = fn.ToCharArray();
-						Array.Reverse(tmp);
-						fn = new string(tmp);
-
-						for (int i = 0; i < f.Length; i++)
-						{
-							if (f[i] == '\'')
+							if (matchFreq.Success)
 							{
-								for (int c = i + 1; c < f.Length; c++)
-								{
-									if (f[c] == '\'')
-										break;
-
-									me += f[c];
-								}
-								break;
+								freq = int.Parse(new Regex(@"\d+").Match(matchFreq.Value).Value);
 							}
-						}
-						Items.Add(new StreamMatroska() { ID = id, File = fn, Mime = me });
-					}
-				}
-				else
-				{
-					if (x.Contains(Kind))
-					{
-						string id = null;
 
-						for (int i = 9; i < x.Length; i++)
-						{
-							if (x[i] == ':')
-								break;
+							// Channel
+							Regex regChan = new Regex(@"(stereo|mono|\d\.\d)");
+							Match matchChan = regChan.Match(item);
 
-							id += x[i];
+							if (matchChan.Success)
+							{
+								if (matchChan.Value.Contains('.'))
+									chan = int.Parse(matchChan.Value.Split('.')[0]) + int.Parse(matchChan.Value.Split('.')[1]);
+								else if (string.Equals(matchChan.Value, "mono", IC))
+									chan = 1;
+								else
+									chan = 2;
+							}
+
+							// Bit
+							Regex regBit = new Regex(@"(flt|fltp|s\d{1,2})");
+							Match matchBit = regBit.Match(item);
+
+							if (matchBit.Success)
+							{
+								if (matchBit.Value.Contains('s'))
+									bit = int.Parse(matchBit.Value.Substring(1));
+
+								if (bit >= 32)
+									bit = 24;
+							}
+
+							Items.Add(new audio()
+							{
+								Basic = new basic
+								{
+									Id = Common.Id,
+									Lang = Common.Lang,
+									Codec = Common.Codec,
+									Format = Common.Format,
+								},
+
+								RawFreq = freq,
+								RawBit = bit,
+								RawChan = chan
+							});
 						}
-						Items.Add(new StreamMatroska() { ID = id, File = GetInfo.FileNameNoExt(file) });
-					}
-				}
+                    }
+                }
 			}
+
+			return Items;
+		}
+
+		public static List<basic> Subtitle(string file)
+		{
+			List<basic> Items = new List<basic>();
+			string kind = "Subtitle";
+
+			TaskManager.Run($"\"{Plugin.FFPROBE}\" \"{file}\" 2> {IdFFm}");
+			foreach (var item in File.ReadAllLines(IdFFm))
+			{
+				if (item.Contains("Stream #"))
+				{
+					if (item.Contains(kind))
+					{
+						var Common = Basic(kind, item);
+
+						Items.Add(new basic()
+						{
+							Id = Common.Id,
+							Lang = Common.Lang,
+							Codec = Common.Codec,
+							Format = Common.Format
+						});
+					}
+                }
+			}
+
 			return Items;
 		}
 
 		public static int FrameCount(string file)
 		{
 			Console.WriteLine("Reading encoded total frame, please wait...");
-			TaskManager.Run($"\"{Plugin.PROBE}\" \"{file}\" -hide_banner -show_streams -count_frames -select_streams v:0 > streams.ff 2>&1");
+			TaskManager.Run($"\"{Plugin.FFPROBE}\" \"{file}\" -hide_banner -show_streams -count_frames -select_streams v:0 > streams.ff 2>&1");
 
 			string frame = null;
 			bool equal = false;
-			foreach (var item in File.ReadAllLines(Path.Combine(Properties.Settings.Default.DirTemp, "streams.ff")))
+			foreach (var item in File.ReadAllLines(Path.Combine(Default.DirTemp, "streams.ff")))
 			{
 				if (item.Contains("nb_read_frames"))
 				{
@@ -354,20 +322,22 @@ namespace ifme
 
 		public static string AviSynthGetFile(string file)
 		{
+			string folder = Path.GetDirectoryName(file);
+
 			if (string.Equals(Path.GetExtension(file), ".avs", StringComparison.OrdinalIgnoreCase))
 			{
 				foreach (var item in File.ReadAllLines(file))
 				{
-					foreach (var code in File.ReadAllLines(Path.Combine(Global.Folder.App, "avisynthsource.code")))
+					foreach (var code in File.ReadAllLines("avisynthsource.code"))
 					{
 						if (item.Contains(code))
 						{
-							for (int i = 0; i < item.Length; i++)
+							for (int i = item.IndexOf(code) + code.Length; i < item.Length; i++)
 							{
 								if (item[i] == '(' && item[i + 1] == '"')
 								{
 									i += 2;
-									file = "";
+									file = string.Empty;
 									while (i < item.Length)
 									{
 										if (item[i] == '"' && (item[i + 1] == ',' || item[i + 1] == ')'))
@@ -385,9 +355,16 @@ namespace ifme
 						}
 					}
 				}
-				return file; // return file
 			}
-			return file; // return if not avs file
+
+			if (file[0] == '/' || file[1] == ':') // check path is full or just file
+			{
+				return file; // return if file is full path
+			}
+			else
+			{
+				return Path.Combine(folder, file); // merge current folder & path
+			}
 		}
 
 		public static int AviSynthFrameCount(string file)
@@ -398,7 +375,7 @@ namespace ifme
 			Console.WriteLine("Please wait while IFME analysing AviSynth file...");
 			Console.ResetColor();
 
-			TaskManager.Run($"\"{Plugin.AVS4P}\" info \"{file}\" > avisynth.id");
+			TaskManager.Run($"\"{Plugin.AVSPIPE}\" info \"{file}\" > avisynth.id");
 			string[] result = File.ReadAllLines(Path.Combine(Default.DirTemp, "avisynth.id"));
 
 			foreach (var item in result)
